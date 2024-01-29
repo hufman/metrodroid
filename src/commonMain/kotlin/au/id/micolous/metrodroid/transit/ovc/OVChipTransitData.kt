@@ -30,8 +30,11 @@ import au.id.micolous.metrodroid.multi.Parcelize
 import au.id.micolous.metrodroid.multi.R
 import au.id.micolous.metrodroid.time.MetroTimeZone
 import au.id.micolous.metrodroid.time.Timestamp
+import au.id.micolous.metrodroid.time.TimestampFull
 import au.id.micolous.metrodroid.transit.*
 import au.id.micolous.metrodroid.transit.en1545.*
+import au.id.micolous.metrodroid.transit.ovc.OVChipTransaction.Companion.PROCESS_CHECKIN
+import au.id.micolous.metrodroid.transit.ovc.OVChipTransaction.Companion.TRANSACTION_TYPE
 import au.id.micolous.metrodroid.ui.HeaderListItem
 import au.id.micolous.metrodroid.ui.ListItem
 import au.id.micolous.metrodroid.ui.ListItemInterface
@@ -137,6 +140,13 @@ data class OVChipTransitData(
             val transactions = (0..27).mapNotNull { transactionId ->
                 OVChipTransaction.parseClassic(card[35 + transactionId / 7]
                         .readBlocks(transactionId % 7 * 2, 2))
+            }.sortedBy { it
+            }.map {
+                println("$it")
+                it
+            }
+            val taggedTransactions = transactions.filter {
+                !it.isTransparent   // don't include Reload transactions, which might have conflicting IDs
             }.groupingBy { it.id }.reduce { _, transaction, nextTransaction ->
                 if (transaction.isTapOff)
                 // check for two consecutive (duplicate) logouts, skip the second one
@@ -144,9 +154,50 @@ data class OVChipTransitData(
                 else
                 // handle two consecutive (duplicate) logins, skip the first one
                     nextTransaction
-            }.values.toMutableList()
+            }.values.fakeTagOnTransactions()
+            val fullTransactions = transactions.filter {
+                it.isTransparent
+            } + taggedTransactions
+            val expandedTransactions = fullTransactions.toMutableList()
 
-            return TransactionTripLastPrice.merge(transactions)
+            return TransactionTripLastPrice.merge(expandedTransactions)
+        }
+
+        /**
+         * Some busses (like Syntus) delete the tapOn transaction
+         * and only leave a tapOff transaction with a tripLength (and a sequential ID)
+         * This function adds fake tapOn transactions for the Trip log to correlate
+         */
+        private fun Collection<OVChipTransaction>.fakeTagOnTransactions(): Collection<OVChipTransaction> {
+            if (this.isEmpty()) return this
+            var previous: OVChipTransaction? = null
+            val output = ArrayList<OVChipTransaction>(this.size)
+            for (it in this) {
+                if (previous != null) {
+                    if (it.isTapOff && it.tripLength > 0 && it.id - previous.id > 1) {
+                        val newParsed = En1545Parsed()
+                        for (field in listOf(
+                            En1545Transaction.EVENT_SERVICE_PROVIDER,
+                            En1545Transaction.EVENT_VEHICLE_ID,
+                        )) {
+                            newParsed.insertInt(field, "", it.parsed.getIntOrZero(field))
+                        }
+                        var date = it.parsed.getIntOrZero(En1545FixedInteger.dateName(En1545Transaction.EVENT))
+                        var time = it.parsed.getIntOrZero(En1545FixedInteger.timeLocalName(En1545Transaction.EVENT))
+                        time -= it.tripLength
+                        if (time < 0) { date -= 1; time += 1440 }
+                        newParsed.insertInt(TRANSACTION_TYPE, "", PROCESS_CHECKIN)
+                        newParsed.insertInt(En1545Transaction.EVENT_SERIAL_NUMBER, "", it.id-1)
+                        newParsed.insertInt(En1545FixedInteger.dateName(En1545Transaction.EVENT), "", date)
+                        newParsed.insertInt(En1545FixedInteger.timeLocalName(En1545Transaction.EVENT), "", time)
+                        println("Adding fake $newParsed")
+                        output.add(OVChipTransaction(newParsed))
+                    }
+                }
+                output.add(it)
+                previous = it
+            }
+            return output
         }
 
         fun<T: En1545Subscription> getSubscriptions(card: ClassicCard, index: OVChipIndex,  factory: (data: ImmutableByteArray, type1: Int, used: Int) -> T): List<T> {

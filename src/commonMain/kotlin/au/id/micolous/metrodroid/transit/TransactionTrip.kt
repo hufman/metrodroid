@@ -156,21 +156,27 @@ abstract class TransactionTripAbstract: Trip() {
                 val ts = transaction.timestamp
                 if (!transaction.isTransparent && ts is TimestampFull)
                     timedTransactions.add(Pair(transaction, ts))
-                else
+                else {
+//                    println("Saving to the end $transaction")
                     unmergeableTransactions.add(transaction)
+                }
             }
-            val transactions = timedTransactions.sortedBy { it.second.timeInMillis }
+            val transactions = timedTransactions.sortedBy { it.first }
             val trips = mutableListOf<TransactionTripAbstract>()
             for ((first) in transactions) {
+                println("Checking to merge $first")
                 if (trips.isEmpty()) {
                     trips.add(factory(first))
                     continue
                 }
                 val previous = trips[trips.size - 1]
-                if (previous.end == null && previous.start?.shouldBeMerged(first) == true)
+                if (previous.end == null && previous.start?.shouldBeMerged(first) == true) {
+                    println("Completing trip from ${previous.start}")
                     previous.capsule.end = first
-                else
+                } else {
+//                    println("Creating a new trip")
                     trips.add(factory(first))
+                }
             }
             return trips + unmergeableTransactions.map { factory(it) }
         }

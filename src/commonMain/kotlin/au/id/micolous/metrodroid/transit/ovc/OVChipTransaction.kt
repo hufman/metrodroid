@@ -79,6 +79,33 @@ data class OVChipTransaction(override val parsed: En1545Parsed) : En1545Transact
         return true
     }
 
+    override fun compareTo(other: Transaction): Int {
+        if (other is OVChipTransaction) {
+            return id.compareTo(other.id)
+        }
+        return super.compareTo(other)
+    }
+
+    override fun toString(): String {
+        val companyName = getAgencyName(true)
+        val tap = when (transfer) {
+            PROCESS_PURCHASE -> "reload"
+            PROCESS_CHECKIN -> "tapOn"
+            PROCESS_CHECKOUT -> "tapOff"
+            else -> transfer.toString()
+        }
+        val tripLength = parsed.getIntOrZero("TripDurationMinutes")
+        val unknownIds = listOf(1, 4, 6, 8, 10, 12, 13, 14, 16, 18, 19, 20, 22, 23, 27)
+        val unknownValues = unknownIds.map {
+            it to parsed.getIntOrZero(neverSeen(it))
+        }.filter {
+            it.second > 0
+        }.map {
+            ", unknown${it.first}=${it.second}"
+        }.joinToString("")
+        return "OVChipTransaction(date=$date, time=$time, transfer=$tap, company=$companyName, id=$id, mode=$mode, tripLength=$tripLength$unknownValues)"
+    }
+
     override val mode get(): Trip.Mode {
         val startStationId = stationId ?: 0
 
@@ -112,10 +139,12 @@ data class OVChipTransaction(override val parsed: En1545Parsed) : En1545Transact
         }
     }
 
+    val tripLength get() = parsed.getIntOrZero("TripDurationMinutes")
+
     companion object {
-        private const val PROCESS_PURCHASE = 0x00
-        private const val PROCESS_CHECKIN = 0x01
-        private const val PROCESS_CHECKOUT = 0x02
+        internal const val PROCESS_PURCHASE = 0x00
+        internal const val PROCESS_CHECKIN = 0x01
+        internal const val PROCESS_CHECKOUT = 0x02
         private const val PROCESS_TRANSFER = 0x06
         private const val PROCESS_BANNED = 0x07
         private const val PROCESS_CREDIT = -0x02
@@ -123,9 +152,12 @@ data class OVChipTransaction(override val parsed: En1545Parsed) : En1545Transact
 
         private const val AGENCY_TLS = 0x00
         private const val AGENCY_GVB = 0x02
+        private const val AGENCY_HTM = 0x03
         private const val AGENCY_NS = 0x04
         private const val AGENCY_RET = 0x05
         private const val AGENCY_ARRIVA = 0x08
+        private const val AGENCY_SYNTUS = 0x09
+        private const val AGENCY_QBUZZ = 0x0A
         private const val AGENCY_DUO = 0x0C    // Could also be 2C though... ( http://www.ov-chipkaart.me/forum/viewtopic.php?f=10&t=299 )
         private const val AGENCY_STORE = 0x19
 
@@ -184,13 +216,17 @@ data class OVChipTransaction(override val parsed: En1545Parsed) : En1545Transact
         )
 
         fun parseClassic(data: ImmutableByteArray): OVChipTransaction? {
-            if (data.getBitsFromBuffer(0, 28) == 0)
+            if (data.getBitsFromBuffer(0, 28) == 0) {
+                println("Found empty card")
                 return null
+            }
             val parsed = En1545Parser.parse(data, tripFields())
             // 27 is not critical, ignore if ever
             for (i in 1..23)
-                if (parsed.contains(neverSeen(i)))
+                if (parsed.contains(neverSeen(i))) {
+                    println("Found neverSeen${i} in $parsed")
                     return null
+                }
             return OVChipTransaction(parsed)
         }
 
