@@ -154,7 +154,9 @@ data class OVChipTransitData(
                 else
                 // handle two consecutive (duplicate) logins, skip the first one
                     nextTransaction
-            }.values.fakeTagOnTransactions()
+            }.values.sortedBy {
+                it.id
+            }.fakeTagOnTransactions()
             val fullTransactions = transactions.filter {
                 it.isTransparent
             } + taggedTransactions
