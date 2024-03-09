@@ -161,7 +161,7 @@ abstract class TransactionTripAbstract: Trip() {
                     unmergeableTransactions.add(transaction)
                 }
             }
-            val transactions = timedTransactions.sortedBy { it.first }
+            val transactions = timedTransactions.sortedBy { it.second.timeInMillis }
             val trips = mutableListOf<TransactionTripAbstract>()
             for ((first) in transactions) {
                 println("Checking to merge $first")
