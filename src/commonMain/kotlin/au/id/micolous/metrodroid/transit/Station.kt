@@ -59,6 +59,10 @@ class Station (val humanReadableId: String, val companyName: FormattedString? = 
         return this
     }
 
+    override fun toString(): String {
+        return "Station(stationName=$stationName)"
+    }
+
     companion object {
         private fun showRawId() = Preferences.showRawStationIds
 
