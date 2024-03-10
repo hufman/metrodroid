@@ -92,7 +92,12 @@ class ClipperTrip (private val mTimestamp: Long,
             0x6f -> Mode.METRO
             0x61, 0x75 -> Mode.BUS
             0x73 -> Mode.FERRY
-            else -> Mode.OTHER
+            0x77 -> Mode.BUS      // seen for Muni bus
+            0x78 -> Mode.TRAIN     // might also be like 0x62
+            else -> {
+                println("Unknown clipper mode $mTransportCode")
+                Mode.OTHER}
+
         }
 
     internal constructor(useData: ImmutableByteArray): this(
